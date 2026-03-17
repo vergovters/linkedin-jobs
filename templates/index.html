@@ -156,6 +156,14 @@
     }
     .btn-save-session:hover { filter: brightness(1.1); }
     .btn-save-session:disabled { opacity: 0.6; cursor: not-allowed; }
+    .paste-section { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+    .paste-section summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+    .paste-section textarea {
+      width: 100%; min-height: 100px; margin-top: 0.5rem; padding: 0.6rem;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; resize: vertical;
+    }
+    .btn-paste { margin-top: 0.5rem; }
   </style>
 </head>
 <body>
@@ -168,17 +176,30 @@
         LinkedIn session
         <span id="linkedinStatusText">{% if linkedin_configured %}Set up ✓{% else %}Not set up{% endif %}</span>
       </div>
+      {% if is_deployed %}
+      <p class="setup-msg" style="margin-top: 0.5rem;">You’re on the hosted app — use <strong>Paste session</strong> below to add your LinkedIn session (browser login isn’t available here).</p>
+      {% endif %}
       <div>
-        <button type="button" id="setupBtn" class="btn-outline" {% if linkedin_configured %}style="display: none"{% endif %}>
+        <button type="button" id="setupBtn" class="btn-outline" {% if linkedin_configured %}style="display: none"{% endif %} {% if is_deployed %}title="Only works when running the app on your computer"{% endif %}>
           Set up LinkedIn
         </button>
         <button type="button" id="replaceBtn" class="btn-outline" {% if not linkedin_configured %}style="display: none"{% endif %}>
           Replace session
         </button>
+        <span class="hint" id="replaceHint" style="margin-left: 0.5rem; {% if not linkedin_configured %}display: none;{% endif %}">— open browser to log in again</span>
         <p id="setupMsg" class="setup-msg" style="display: none;"></p>
         <button type="button" id="saveNowBtn" class="btn-save-session" style="display: none;">
           I've logged in — save session
         </button>
+        <div class="paste-section">
+          <details {% if is_deployed %}open{% endif %}>
+            <summary>{{ 'Paste your LinkedIn session here' if is_deployed else 'Using the hosted app? Paste your LinkedIn session here' }}</summary>
+            <p class="hint" style="margin-top: 0.5rem;">Run the app <strong>on your computer</strong> once, click “Set up LinkedIn”, log in, then copy the contents of <code>linkedin-auth.json</code> and paste below.</p>
+            <textarea id="pasteSession" placeholder='Paste the full contents of linkedin-auth.json (starts with {"cookies":...)'></textarea>
+            <button type="button" id="pasteSaveBtn" class="btn btn-paste">Save pasted session</button>
+            <p id="pasteMsg" class="setup-msg" style="display: none; margin-top: 0.5rem;"></p>
+          </details>
+        </div>
       </div>
     </div>
 
@@ -220,6 +241,8 @@
               statusText.textContent = 'Set up ✓';
               setupBtn.style.display = 'none';
               replaceBtn.style.display = 'inline-block';
+              var rh = document.getElementById('replaceHint');
+              if (rh) rh.style.display = 'inline';
               setupMsg.style.display = 'none';
               saveNowBtn.style.display = 'none';
               if (setupPollInterval) clearInterval(setupPollInterval);
@@ -229,6 +252,8 @@
             statusText.textContent = 'Not set up';
             setupBtn.style.display = 'inline-block';
             replaceBtn.style.display = 'none';
+            var rh = document.getElementById('replaceHint');
+            if (rh) rh.style.display = 'none';
             saveNowBtn.style.display = 'none';
             setupMsg.style.display = 'none';
             return false;
@@ -296,6 +321,33 @@
 
       setupBtn.addEventListener('click', startSetup);
       replaceBtn.addEventListener('click', startSetup);
+
+      document.getElementById('pasteSaveBtn').addEventListener('click', function() {
+        var textarea = document.getElementById('pasteSession');
+        var msgEl = document.getElementById('pasteMsg');
+        var btn = document.getElementById('pasteSaveBtn');
+        var raw = (textarea.value || '').trim();
+        if (!raw) { msgEl.style.display = 'block'; msgEl.textContent = 'Paste the file contents first.'; return; }
+        btn.disabled = true;
+        msgEl.style.display = 'block';
+        msgEl.textContent = 'Saving…';
+        fetch('/api/linkedin-paste', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: raw }) })
+          .then(r => r.json())
+          .then(function(d) {
+            if (d.ok) {
+              msgEl.textContent = 'Session saved.';
+              refreshStatus();
+              statusEl.classList.add('ok');
+              statusText.textContent = 'Set up ✓';
+              setupBtn.style.display = 'none';
+              replaceBtn.style.display = 'inline-block';
+              var rh = document.getElementById('replaceHint');
+              if (rh) rh.style.display = 'inline';
+            } else { msgEl.textContent = d.error || 'Failed.'; }
+            btn.disabled = false;
+          })
+          .catch(function() { msgEl.textContent = 'Request failed.'; btn.disabled = false; });
+      });
     })();
   </script>
 </body>

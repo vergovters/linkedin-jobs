@@ -136,9 +136,25 @@ def run_pipeline(run_id: str, xlsx_path: str, url_column: str) -> None:
         write_status("done", error=str(e))
 
 
+def _is_deployed() -> bool:
+    """True when running on a host (e.g. Railway/Render); browser login won't work."""
+    if os.environ.get("DEPLOYED", "").lower() in ("1", "true", "yes"):
+        return True
+    try:
+        from flask import request
+        host = (request.host or "").lower()
+        return host and "localhost" not in host and "127.0.0.1" not in host
+    except Exception:
+        return False
+
+
 @app.route("/")
 def index():
-    return render_template("index.html", linkedin_configured=linkedin_configured())
+    return render_template(
+        "index.html",
+        linkedin_configured=linkedin_configured(),
+        is_deployed=_is_deployed(),
+    )
 
 
 @app.route("/api/linkedin-status")
@@ -148,6 +164,11 @@ def api_linkedin_status():
 
 @app.route("/api/setup-linkedin", methods=["POST"])
 def api_setup_linkedin():
+    if _is_deployed():
+        return jsonify({
+            "started": False,
+            "message": "Browser login doesn’t work on the hosted app. Use “Paste session” below: set up LinkedIn on your computer, then paste the session here.",
+        })
     thread = threading.Thread(target=_run_linkedin_setup, daemon=True)
     thread.start()
     return jsonify({"started": True})
@@ -158,6 +179,24 @@ def api_setup_linkedin_save():
     """Ask the running setup browser to save session now (user clicked 'I've logged in')."""
     try:
         SETUP_SAVE_TRIGGER.touch()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/linkedin-paste", methods=["POST"])
+def api_linkedin_paste():
+    """Save LinkedIn session from pasted JSON (for deployed app where browser can't open)."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        raw = data.get("session") or data.get("content") or ""
+        if not raw or len(raw) < 50:
+            return jsonify({"ok": False, "error": "Paste the full contents of linkedin-auth.json"}), 400
+        if raw.strip().startswith("base64:"):
+            import base64
+            raw = base64.b64decode(raw.strip().split(":", 1)[1]).decode("utf-8")
+        with open(AUTH_FILE, "w") as f:
+            f.write(raw)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
