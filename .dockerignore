@@ -1,0 +1,14 @@
+.venv
+python
+runs
+__pycache__
+*.pyc
+.git
+.gitignore
+*.md
+linkedin-auth.json
+.setup-save-requested
+screenshots
+*.command
+setup.sh
+run.sh

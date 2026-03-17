@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Results — LinkedIn Jobs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f0f12;
+      --surface: #18181c;
+      --border: #2a2a30;
+      --text: #e4e4e7;
+      --muted: #71717a;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #3b82f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .back {
+      display: inline-block;
+      margin-bottom: 1.5rem;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .back:hover { color: var(--text); }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .status {
+      padding: 1rem 1.25rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+    }
+    .status.running { border-color: var(--blue); color: var(--blue); }
+    .status.done { border-color: var(--green); color: var(--green); }
+    .status.error { border-color: var(--red); color: var(--red); }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge.yes { background: rgba(34, 197, 94, 0.2); color: var(--green); }
+    .badge.no { background: rgba(239, 68, 68, 0.2); color: var(--red); }
+    .badge.unknown { background: rgba(113, 113, 122, 0.2); color: var(--muted); }
+    .url-cell { max-width: 320px; }
+    .url-cell a { word-break: break-all; }
+    .thumb {
+      display: block;
+      width: 120px;
+      height: 75px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .thumb:hover { opacity: 0.9; }
+    .thumb-link { display: inline-block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="/" class="back">← Back to upload</a>
+    <h1>Results</h1>
+    <p id="statusLine" class="status running">Processing…</p>
+    <div id="resultsWrap" style="display: none;">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Company (URL)</th>
+              <th>Has open jobs</th>
+              <th>Screenshot</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <script>
+    const runId = "{{ run_id }}";
+    const statusEl = document.getElementById("statusLine");
+    const resultsWrap = document.getElementById("resultsWrap");
+    const resultsBody = document.getElementById("resultsBody");
+
+    function poll() {
+      fetch("/run/" + runId + "/status")
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === "running") {
+            statusEl.textContent = data.current != null && data.total
+              ? "Processing… " + data.current + " / " + data.total
+              : "Processing…";
+            setTimeout(poll, 2000);
+            return;
+          }
+          if (data.status === "done") {
+            statusEl.className = "status " + (data.error ? "error" : "done");
+            statusEl.textContent = data.error || "Done.";
+            if (!data.error) loadResults();
+            return;
+          }
+          setTimeout(poll, 1500);
+        })
+        .catch(() => setTimeout(poll, 2000));
+    }
+
+    function loadResults() {
+      fetch("/run/" + runId + "/results")
+        .then(r => r.json())
+        .then(rows => {
+          resultsWrap.style.display = "block";
+          resultsBody.innerHTML = rows.map(r => {
+            const badge = r.has_open_jobs === true ? "yes" : (r.has_open_jobs === false ? "no" : "unknown");
+            const label = r.has_open_jobs === true ? "Yes" : (r.has_open_jobs === false ? "No" : "—");
+            const thumbUrl = "/run/" + runId + "/screenshots/" + (r.screenshot || "");
+            return "<tr>" +
+              "<td class=\"url-cell\"><a href=\"" + escapeHtml(r.url) + "\" target=\"_blank\" rel=\"noopener\">" + escapeHtml(r.url) + "</a></td>" +
+              "<td><span class=\"badge " + badge + "\">" + label + "</span></td>" +
+              "<td>" + (r.screenshot ? "<a class=\"thumb-link\" href=\"" + thumbUrl + "\" target=\"_blank\"><img class=\"thumb\" src=\"" + thumbUrl + "\" alt=\"Screenshot\"></a>" : "—") + "</td>" +
+              "</tr>";
+          }).join("");
+        });
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement("div");
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    poll();
+  </script>
+</body>
+</html>
